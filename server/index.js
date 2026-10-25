@@ -1,4 +1,7 @@
-﻿const http = require('http');
+require('dotenv').config();
+const cloudinary = require('cloudinary').v2;
+
+const http = require('http');
 const url = require('url');
 
 const PORT = process.env.PORT || 5000;
