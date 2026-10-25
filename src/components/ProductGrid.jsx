@@ -1,15 +1,17 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Filter, ArrowUpDown, ChevronDown, Sparkles } from 'lucide-react';
 import ProductCard from './ProductCard';
-import { sampleProducts, categories, lagosLocations } from '../data';
+import { categories, lagosLocations } from '../data';
+import { useProducts } from '../context/ProductContext';
 
 export default function ProductGrid() {
+  const { products: contextProducts, loading } = useProducts();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [sortBy, setSortBy] = useState('default');
 
   const filteredProducts = useMemo(() => {
-    let result = [...sampleProducts];
+    let result = [...contextProducts];
 
     if (selectedCategory !== 'all') {
       result = result.filter(p => p.category === selectedCategory);

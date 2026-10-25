@@ -2,9 +2,11 @@ import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, X, Filter, MapPin, Sparkles } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
-import { sampleProducts, categories, lagosLocations } from '../data';
+import { categories, lagosLocations } from '../data';
+import { useProducts } from '../context/ProductContext';
 
 export default function ShopPage() {
+  const { products: contextProducts, loading } = useProducts();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialCategory = searchParams.get('category') || 'all';
   const initialLocation = searchParams.get('location') || 'all';
@@ -16,7 +18,7 @@ export default function ShopPage() {
   const [sortBy, setSortBy] = useState('default');
 
   const filteredProducts = useMemo(() => {
-    let list = [...sampleProducts];
+    let list = [...contextProducts];
 
     if (query.trim()) {
       const q = query.toLowerCase();

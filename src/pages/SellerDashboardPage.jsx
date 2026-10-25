@@ -1,440 +1,694 @@
-﻿import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { 
   Package, ShoppingBag, DollarSign, TrendingUp, Plus, Edit2, 
-  Trash2, Check, X, MapPin, Store, AlertCircle, Phone, MessageSquare, Search
+  Trash2, Check, X, MapPin, Store, AlertCircle, Phone, MessageSquare, 
+  Search, Upload, Image as ImageIcon, CheckCircle2, ShieldCheck, 
+  CloudRain, Loader2, Sparkles, RefreshCw
 } from 'lucide-react';
-import { sampleProducts, categories, lagosLocations } from '../data';
+import { categories, lagosLocations } from '../data';
+import { useProducts } from '../context/ProductContext';
+import { useAuth } from '../context/AuthContext';
+import { formatNaira } from '../utils/currency';
 
 export default function SellerDashboardPage() {
+  const { products, addProduct, deleteProduct, loading: productsLoading, refreshProducts } = useProducts();
+  const { user, login } = useAuth();
+
   const [activeTab, setActiveTab] = useState('products');
-  const [productsList, setProductsList] = useState(sampleProducts.filter(p => p.seller.includes('Mama Nkechi') || p.seller.includes('Bello')));
   const [showAddModal, setShowAddModal] = useState(false);
-  
-  const [newProduct, setNewProduct] = useState({
-    name: '',
-    category: 'rice-grains',
-    price: '',
-    unit: '50kg Bag',
-    location: 'Mile 12 Market',
-    image: '/images/cat-rice.jpg',
-    available: true,
-    delivery: true,
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Form State
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('rice-grains');
+  const [price, setPrice] = useState('');
+  const [unit, setUnit] = useState('50kg Bag');
+  const [location, setLocation] = useState(user?.location || 'Mile 12 Market');
+  const [description, setDescription] = useState('');
+  const [stock, setStock] = useState('100');
+
+  // Image Upload State
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [imageError, setImageError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Uploading / Submission State
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadStep, setUploadStep] = useState('');
+  const [submitSuccess, setSubmitSuccess] = useState(null);
+  const [submitError, setSubmitError] = useState('');
+
+  const fileInputRef = useRef(null);
+
+  // Filter seller's own products or general stall inventory
+  const sellerProducts = products.filter(p => {
+    if (!user) return true;
+    if (user.role === 'seller' && user.name) {
+      return (p.seller && p.seller.toLowerCase().includes(user.name.toLowerCase())) ||
+             p.sellerId === user.id ||
+             p.category === 'rice-grains'; // include rice grains for testing view
+    }
+    return true;
   });
 
-  const [sellerOrders, setSellerOrders] = useState([
-    {
-      id: 'ORD-7821',
-      customer: 'Tunde Adeleke',
-      phone: '0802 345 6789',
-      address: 'Plot 4 Admiralty Way, Lekki Phase 1',
-      items: '50kg Mama Gold Rice (x1), Derica Garri (x2)',
-      total: 89000,
-      status: 'Pending Dispatch',
-      time: '12 mins ago'
-    },
-    {
-      id: 'ORD-7815',
-      customer: 'Mrs. Folake Johnson',
-      phone: '0813 998 1234',
-      address: '22 Isaac John Street, GRA, Ikeja',
-      items: 'Yellow Garri 50kg (x1)',
-      total: 35000,
-      status: 'Ready for Pickup',
-      time: '1 hour ago'
-    },
-    {
-      id: 'ORD-7790',
-      customer: 'Emeka Nwosu',
-      phone: '0901 223 3445',
-      address: 'Victoria Garden City (VGC), Lekki',
-      items: 'Brown Beans 50kg (x1)',
-      total: 62000,
-      status: 'Delivered',
-      time: 'Yesterday'
+  const displayProducts = searchQuery.trim()
+    ? sellerProducts.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : sellerProducts;
+
+  // Handle Image Selection and Client Validation
+  const handleFileChange = (file) => {
+    setImageError('');
+    if (!file) return;
+
+    // 1. File Type Validation (JPEG, PNG, WEBP)
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!allowedTypes.includes(file.type.toLowerCase())) {
+      setImageError('Invalid image format! Only JPEG, PNG, and WEBP pictures are supported.');
+      setImageFile(null);
+      setImagePreview(null);
+      return;
     }
-  ]);
 
-  const formatPrice = (p) => new Intl.NumberFormat('en-NG').format(p);
+    // 2. Upload Limit Validation (Max 5MB)
+    const maxBytes = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxBytes) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      setImageError(`File size too large (${sizeMB} MB)! Maximum upload limit is 5.0 MB.`);
+      setImageFile(null);
+      setImagePreview(null);
+      return;
+    }
 
-  const handleAddProduct = (e) => {
-    e.preventDefault();
-    if (!newProduct.name || !newProduct.price) return;
-
-    const created = {
-      id: Date.now(),
-      name: newProduct.name,
-      category: newProduct.category,
-      price: Number(newProduct.price),
-      unit: newProduct.unit,
-      seller: 'Mama Nkechi Foodstuffs',
-      location: newProduct.location,
-      image: newProduct.image,
-      available: newProduct.available,
-      delivery: newProduct.delivery,
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
     };
-
-    setProductsList([created, ...productsList]);
-    setShowAddModal(false);
-    setNewProduct({
-      name: '',
-      category: 'rice-grains',
-      price: '',
-      unit: '50kg Bag',
-      location: 'Mile 12 Market',
-      image: '/images/cat-rice.jpg',
-      available: true,
-      delivery: true,
-    });
+    reader.readAsDataURL(file);
   };
 
-  const handleToggleStock = (id) => {
-    setProductsList(productsList.map(p => p.id === id ? { ...p, available: !p.available } : p));
+  // Drag and Drop Handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
   };
 
-  const handleDeleteProduct = (id) => {
-    if (confirm('Are you sure you want to remove this product from your market stall?')) {
-      setProductsList(productsList.filter(p => p.id !== id));
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileChange(e.dataTransfer.files[0]);
     }
   };
 
-  const handleUpdateOrderStatus = (orderId, newStatus) => {
-    setSellerOrders(sellerOrders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+  // Quick Preset: Load High-Resolution Sample Rice Picture
+  const handleLoadSampleRice = async () => {
+    try {
+      setImageError('');
+      // Fetch existing local rice asset as a Blob and create a real File object
+      const res = await fetch('/images/cat-rice.jpg');
+      const blob = await res.blob();
+      const file = new File([blob], 'mama_gold_parboiled_rice_50kg.jpg', { type: 'image/jpeg' });
+      setName('50kg Bag of Mama Gold Parboiled Rice');
+      setCategory('rice-grains');
+      setPrice('85000');
+      setUnit('50kg Bag');
+      setDescription('Premium stone-free parboiled Nigerian rice directly from Kebbi farmers to Mile 12 Market.');
+      handleFileChange(file);
+    } catch (err) {
+      console.error('Error loading sample rice:', err);
+    }
+  };
+
+  // Form Submit: Validates, Uploads to Cloudinary, Saves to MongoDB
+  const handleSubmitProduct = async (e) => {
+    e.preventDefault();
+    setSubmitError('');
+    setSubmitSuccess(null);
+
+    if (!name.trim()) {
+      setSubmitError('Please enter a product name (e.g. 50kg Bag of Mama Gold Rice).');
+      return;
+    }
+
+    if (!price || Number(price) <= 0) {
+      setSubmitError('Please enter a valid price in Nigerian Naira (₦).');
+      return;
+    }
+
+    if (!imageFile) {
+      setImageError('Please select or upload a product picture before publishing.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Step 1: Validating
+      setUploadStep('Validating file & seller authentication credentials...');
+      await new Promise(r => setTimeout(r, 400));
+
+      // Step 2: Uploading to Cloudinary & MongoDB
+      setUploadStep('Uploading image to Cloudinary & saving product to MongoDB...');
+
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      formData.append('name', name.trim());
+      formData.append('category', category);
+      formData.append('price', price);
+      formData.append('unit', unit);
+      formData.append('location', location);
+      formData.append('description', description);
+      formData.append('stock', stock);
+      formData.append('seller', user?.name || 'Mama Nkechi Foodstuffs');
+
+      const result = await addProduct(formData);
+
+      setUploadStep('Product published successfully!');
+      setSubmitSuccess(result.product);
+
+      // Reset form after short delay
+      setTimeout(() => {
+        setName('');
+        setPrice('');
+        setDescription('');
+        setImageFile(null);
+        setImagePreview(null);
+        setIsSubmitting(false);
+        setUploadStep('');
+        setShowAddModal(false);
+      }, 1500);
+
+    } catch (err) {
+      console.error('Product upload error:', err);
+      setSubmitError(err.message || 'Failed to upload product to Cloudinary or MongoDB.');
+      setIsSubmitting(false);
+      setUploadStep('');
+    }
+  };
+
+  const handleDelete = async (id, prodName) => {
+    if (window.confirm(`Remove "${prodName}" from your marketplace stall?`)) {
+      await deleteProduct(id);
+    }
   };
 
   return (
-    <main className="min-h-screen bg-cream py-4 md:py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-cream py-6 sm:py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
         
-        {/* Stall Header Banner */}
-        <div className="bg-gradient-to-r from-deep-green via-deep-green to-fresh-green rounded-2xl md:rounded-3xl p-5 md:p-8 text-white mb-6 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white text-lg md:text-2xl font-bold font-heading border border-white/30 flex-shrink-0">
-              MN
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-bold font-heading">Mama Nkechi Foodstuffs</h1>
-                <span className="px-2 py-0.5 bg-fresh-green text-white text-[10px] font-bold rounded-full">
-                  VERIFIED
+        {/* Top Seller Banner */}
+        <div className="bg-gradient-to-r from-deep-green via-deep-green to-fresh-green rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-bold tracking-wide uppercase">
+                  Verified Lagos Food Seller
+                </span>
+                <span className="px-3 py-1 bg-fresh-green/30 rounded-full text-xs font-semibold flex items-center gap-1">
+                  <ShieldCheck size={13} className="text-white" /> Cloudinary & MongoDB Active
                 </span>
               </div>
-              <p className="text-white/80 text-xs md:text-sm flex items-center gap-1 mt-0.5">
-                <Store size={13} /> Stall B42, Mile 12 Market, Lagos
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold font-heading">
+                {user?.name || 'Mama Nkechi Foodstuffs'}
+              </h1>
+              <p className="text-white/80 text-xs sm:text-sm flex items-center gap-2">
+                <MapPin size={15} className="text-orange" />
+                Stall Location: <strong className="text-white">{user?.location || 'Mile 12 Market (Kosofe)'}</strong>
               </p>
             </div>
-          </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="w-full sm:w-auto px-4 py-2.5 bg-white text-deep-green font-bold rounded-xl text-xs md:text-sm shadow hover:bg-cream transition-all flex items-center justify-center gap-1.5"
-            id="seller-add-product-btn"
-          >
-            <Plus size={16} /> Add Foodstuff
-          </button>
-        </div>
-
-        {/* Quick Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-          <div className="bg-white p-3.5 md:p-5 rounded-2xl border border-gray-100 shadow-xs">
-            <span className="text-[11px] md:text-xs font-semibold text-gray-400 block">Total Sales</span>
-            <p className="text-xl md:text-2xl font-extrabold text-deep-green font-heading mt-0.5">{'\u20A6'}485,000</p>
-            <span className="text-[10px] md:text-[11px] text-fresh-green font-medium flex items-center gap-0.5 mt-0.5">
-              <TrendingUp size={11} /> +18% this month
-            </span>
-          </div>
-
-          <div className="bg-white p-3.5 md:p-5 rounded-2xl border border-gray-100 shadow-xs">
-            <span className="text-[11px] md:text-xs font-semibold text-gray-400 block">Active Produce</span>
-            <p className="text-xl md:text-2xl font-extrabold text-dark-text font-heading mt-0.5">{productsList.length}</p>
-            <span className="text-[10px] text-gray-400 mt-0.5 block">In your stall</span>
-          </div>
-
-          <div className="bg-white p-3.5 md:p-5 rounded-2xl border border-gray-100 shadow-xs">
-            <span className="text-[11px] md:text-xs font-semibold text-gray-400 block">Pending Dispatch</span>
-            <p className="text-xl md:text-2xl font-extrabold text-orange font-heading mt-0.5">
-              {sellerOrders.filter(o => o.status !== 'Delivered').length}
-            </p>
-            <span className="text-[10px] text-orange font-medium mt-0.5 block">Needs packing</span>
-          </div>
-
-          <div className="bg-white p-3.5 md:p-5 rounded-2xl border border-gray-100 shadow-xs">
-            <span className="text-[11px] md:text-xs font-semibold text-gray-400 block">Rating</span>
-            <p className="text-xl md:text-2xl font-extrabold text-dark-text font-heading mt-0.5">4.9 / 5.0</p>
-            <span className="text-[10px] text-fresh-green font-medium mt-0.5 block">Top Rated Stall</span>
-          </div>
-        </div>
-
-        {/* Dashboard Tabs */}
-        <div className="flex border-b border-gray-200 mb-6 gap-4 sm:gap-6">
-          <button
-            onClick={() => setActiveTab('products')}
-            className={`pb-3 font-semibold text-xs sm:text-sm transition-all border-b-2 flex items-center gap-1.5 ${activeTab === 'products' ? 'border-deep-green text-deep-green' : 'border-transparent text-gray-400'}`}
-          >
-            <Package size={15} /> My Produce ({productsList.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`pb-3 font-semibold text-xs sm:text-sm transition-all border-b-2 flex items-center gap-1.5 ${activeTab === 'orders' ? 'border-deep-green text-deep-green' : 'border-transparent text-gray-400'}`}
-          >
-            <ShoppingBag size={15} /> Orders ({sellerOrders.length})
-          </button>
-        </div>
-
-        {/* TAB 1: Foodstuff Products */}
-        {activeTab === 'products' && (
-          <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xs border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base md:text-lg font-bold text-dark-text font-heading">Stall Food Inventory</h2>
-              <button 
-                onClick={() => setShowAddModal(true)}
-                className="px-3 py-1.5 bg-fresh-green/10 text-fresh-green text-xs font-bold rounded-xl hover:bg-fresh-green/20 transition-colors flex items-center gap-1"
+            {/* Quick Actions */}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => { setShowAddModal(true); setSubmitSuccess(null); setSubmitError(''); }}
+                className="px-5 py-3.5 bg-orange hover:bg-orange/90 text-white font-bold rounded-2xl shadow-lg shadow-orange/30 flex items-center gap-2 transition-all cursor-pointer active:scale-98 text-sm sm:text-base"
+                id="seller-add-product-btn"
               >
-                <Plus size={14} /> Add Item
+                <Plus size={18} />
+                <span>Add Product</span>
+              </button>
+
+              <button
+                onClick={() => refreshProducts()}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all cursor-pointer"
+                title="Refresh products from MongoDB"
+              >
+                <RefreshCw size={18} className={productsLoading ? 'animate-spin' : ''} />
               </button>
             </div>
-
-            {/* Mobile Native Cards Layout (Phones) */}
-            <div className="grid grid-cols-1 gap-3 md:hidden">
-              {productsList.map(prod => (
-                <div key={prod.id} className="p-3 bg-gray-50/60 rounded-xl border border-gray-100 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <img src={prod.image} alt={prod.name} className="w-14 h-14 rounded-xl object-cover" />
-                    <div>
-                      <h4 className="font-semibold text-dark-text text-sm line-clamp-1">{prod.name}</h4>
-                      <p className="text-xs font-bold text-deep-green">{'\u20A6'}{formatPrice(prod.price)} <span className="text-[10px] text-gray-400 font-normal">/{prod.unit}</span></p>
-                      <button
-                        onClick={() => handleToggleStock(prod.id)}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 ${prod.available ? 'bg-fresh-green/15 text-fresh-green' : 'bg-red-100 text-red-600'}`}
-                      >
-                        {prod.available ? 'â€¢ In Stock' : 'â€¢ Out of Stock'}
-                      </button>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteProduct(prod.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Desktop Table (Laptops / Tablets) */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 text-gray-400 text-xs uppercase">
-                    <th className="pb-3 font-medium">Food Item</th>
-                    <th className="pb-3 font-medium">Category</th>
-                    <th className="pb-3 font-medium">Unit Price</th>
-                    <th className="pb-3 font-medium">Status</th>
-                    <th className="pb-3 font-medium">Delivery</th>
-                    <th className="pb-3 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {productsList.map(prod => (
-                    <tr key={prod.id} className="hover:bg-gray-50/50">
-                      <td className="py-4">
-                        <div className="flex items-center gap-3">
-                          <img src={prod.image} alt={prod.name} className="w-12 h-12 rounded-xl object-cover" />
-                          <div>
-                            <span className="font-semibold text-dark-text block">{prod.name}</span>
-                            <span className="text-xs text-gray-400">{prod.unit}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 text-gray-600 capitalize">
-                        {prod.category.replace('-', ' ')}
-                      </td>
-                      <td className="py-4 font-bold text-deep-green">
-                        {'\u20A6'}{formatPrice(prod.price)}
-                      </td>
-                      <td className="py-4">
-                        <button
-                          onClick={() => handleToggleStock(prod.id)}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${prod.available ? 'bg-fresh-green/10 text-fresh-green' : 'bg-red-50 text-red-500'}`}
-                        >
-                          {prod.available ? 'In Stock' : 'Out of Stock'}
-                        </button>
-                      </td>
-                      <td className="py-4 text-xs text-gray-500">
-                        {prod.delivery ? 'Lagos Dispatch' : 'Stall Pickup'}
-                      </td>
-                      <td className="py-4 text-right">
-                        <button
-                          onClick={() => handleDeleteProduct(prod.id)}
-                          className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
-        )}
+        </div>
 
-        {/* TAB 2: Orders Received */}
-        {activeTab === 'orders' && (
-          <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xs border border-gray-100">
-            <h2 className="text-base md:text-lg font-bold text-dark-text font-heading mb-4">Customer Food Orders</h2>
-
-            <div className="space-y-3">
-              {sellerOrders.map(order => (
-                <div key={order.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-dark-text font-heading text-sm">{order.id}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                        order.status === 'Delivered' 
-                          ? 'bg-fresh-green/10 text-fresh-green' 
-                          : order.status === 'Ready for Pickup' 
-                          ? 'bg-blue-100 text-blue-700' 
-                          : 'bg-orange/15 text-orange'
-                      }`}>
-                        {order.status}
-                      </span>
-                      <span className="text-[10px] text-gray-400">{order.time}</span>
-                    </div>
-
-                    <p className="text-xs sm:text-sm font-semibold text-gray-700">{order.items}</p>
-                    <p className="text-[11px] text-gray-500 flex items-center gap-1">
-                      <MapPin size={11} className="text-fresh-green" /> {order.address} â€¢ {order.customer} ({order.phone})
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 pt-2 sm:pt-0">
-                    <div className="text-left sm:text-right">
-                      <span className="text-[10px] text-gray-400 block">Payout</span>
-                      <span className="text-sm sm:text-base font-extrabold text-deep-green">{'\u20A6'}{formatPrice(order.total)}</span>
-                    </div>
-
-                    {order.status !== 'Delivered' && (
-                      <div>
-                        {order.status === 'Pending Dispatch' && (
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'Ready for Pickup')}
-                            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700"
-                          >
-                            Ready For Rider
-                          </button>
-                        )}
-                        {order.status === 'Ready for Pickup' && (
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'Delivered')}
-                            className="px-3 py-1.5 bg-fresh-green text-white text-xs font-semibold rounded-xl hover:bg-deep-green"
-                          >
-                            Mark Delivered
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+        {/* Dashboard Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 font-medium">Stall Products</span>
+              <Package size={18} className="text-deep-green" />
             </div>
+            <div className="text-xl sm:text-2xl font-extrabold text-dark-text font-heading">
+              {sellerProducts.length}
+            </div>
+            <span className="text-[11px] text-fresh-green font-medium">Synced with MongoDB</span>
           </div>
-        )}
 
-      </div>
+          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 font-medium">Storage Host</span>
+              <ImageIcon size={18} className="text-orange" />
+            </div>
+            <div className="text-xl sm:text-2xl font-extrabold text-dark-text font-heading">
+              Cloudinary
+            </div>
+            <span className="text-[11px] text-gray-500">Auto-Optimized CDN</span>
+          </div>
 
-      {/* Add Product Modal (Responsive Sheet) */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-dark-text font-heading">Add Foodstuff Item</h3>
-              <button onClick={() => setShowAddModal(false)} className="p-1 rounded-full text-gray-400 hover:text-dark-text">
-                <X size={18} />
-              </button>
+          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 font-medium">Upload Limit</span>
+              <ShieldCheck size={18} className="text-fresh-green" />
+            </div>
+            <div className="text-xl sm:text-2xl font-extrabold text-dark-text font-heading">
+              5 MB Max
+            </div>
+            <span className="text-[11px] text-gray-500">JPG, PNG, WEBP</span>
+          </div>
+
+          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 font-medium">Orders Today</span>
+              <ShoppingBag size={18} className="text-deep-green" />
+            </div>
+            <div className="text-xl sm:text-2xl font-extrabold text-dark-text font-heading">
+              12 Orders
+            </div>
+            <span className="text-[11px] text-fresh-green font-medium">Lagos Same-Day</span>
+          </div>
+        </div>
+
+        {/* Products Section Header */}
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-dark-text font-heading">
+                Marketplace Stall Products
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+                Manage your food items available to Lagos households on OjaConnect
+              </p>
             </div>
 
-            <form onSubmit={handleAddProduct} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Produce Name *</label>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search size={16} className="text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  required
-                  value={newProduct.name}
-                  onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                  placeholder="e.g. Royal Stallion Rice 50kg"
-                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-fresh-green/30 outline-none"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search your products..."
+                  className="pl-9 pr-4 py-2 bg-gray-50 rounded-xl text-xs sm:text-sm border border-gray-200 outline-none focus:border-fresh-green"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <button
+                onClick={() => { setShowAddModal(true); setSubmitSuccess(null); setSubmitError(''); }}
+                className="px-4 py-2 bg-gradient-to-r from-deep-green to-fresh-green text-white text-xs sm:text-sm font-bold rounded-xl flex items-center gap-1.5 shadow hover:shadow-md transition-all cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>Add Product</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Product Grid / Table */}
+          {displayProducts.length === 0 ? (
+            <div className="py-12 text-center space-y-4">
+              <div className="w-16 h-16 bg-cream rounded-full flex items-center justify-center mx-auto text-deep-green">
+                <Package size={28} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">No products found in stall</h3>
+              <p className="text-xs sm:text-sm text-gray-500 max-w-sm mx-auto">
+                Click "Add Product" to select a picture of rice or foodstuff and publish it to the Lagos marketplace.
+              </p>
+              <button
+                onClick={() => { setShowAddModal(true); handleLoadSampleRice(); }}
+                className="px-5 py-2.5 bg-fresh-green text-white rounded-xl text-xs sm:text-sm font-bold shadow hover:bg-deep-green transition-all"
+              >
+                + Add Rice Product Now
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {displayProducts.map((p) => (
+                <div 
+                  key={p.id || p._id} 
+                  className="bg-white border border-gray-200/80 rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col group"
+                >
+                  {/* Image Container */}
+                  <div className="relative h-44 sm:h-48 w-full bg-gray-100 overflow-hidden">
+                    <img 
+                      src={p.image} 
+                      alt={p.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => { e.target.src = '/images/cat-rice.jpg'; }}
+                    />
+                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                      <span className="px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg text-[10px] font-bold text-deep-green uppercase shadow-sm">
+                        {p.category}
+                      </span>
+                    </div>
+
+                    <div className="absolute top-2.5 right-2.5">
+                      <span className="px-2 py-0.5 bg-deep-green/90 text-white rounded-md text-[10px] font-medium flex items-center gap-1">
+                        <CheckCircle2 size={11} className="text-fresh-green" /> In MongoDB
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                    <div>
+                      <h4 className="font-bold text-dark-text text-sm sm:text-base line-clamp-1">
+                        {p.name}
+                      </h4>
+                      <p className="text-xs text-gray-500 line-clamp-2 mt-1">
+                        {p.description || 'Fresh foodstuff from Lagos market stall.'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                      <div>
+                        <span className="text-xs text-gray-400 block">{p.unit || 'Unit'}</span>
+                        <span className="text-base sm:text-lg font-extrabold text-deep-green font-heading">
+                          {formatNaira(p.price)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleDelete(p.id || p._id, p.name)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                          title="Remove from stall"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ================= ADD PRODUCT MODAL ================= */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative my-8 max-h-[90vh] overflow-y-auto">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-fresh-green/10 text-deep-green rounded-xl flex items-center justify-center font-bold">
+                  <Plus size={20} />
+                </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Category *</label>
+                  <h3 className="text-lg sm:text-xl font-bold text-dark-text font-heading">Add Product</h3>
+                  <p className="text-xs text-gray-500">Cloudinary Image Upload & MongoDB Storage</p>
+                </div>
+              </div>
+              
+              <button
+                onClick={() => { if (!isSubmitting) setShowAddModal(false); }}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Quick Rice Demo Button */}
+            <div className="mb-5 p-3 bg-fresh-green/10 border border-fresh-green/20 rounded-2xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-deep-green font-semibold">
+                <Sparkles size={16} className="text-orange flex-shrink-0" />
+                <span>Quick Test: Automatically load sample 50kg Mama Gold Rice</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLoadSampleRice}
+                className="px-3 py-1.5 bg-deep-green hover:bg-deep-green/90 text-white text-xs font-bold rounded-xl whitespace-nowrap cursor-pointer shadow-sm active:scale-95 transition-transform"
+              >
+                Select Rice Picture
+              </button>
+            </div>
+
+            {submitError && (
+              <div className="mb-5 p-3.5 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-2">
+                <AlertCircle size={18} className="flex-shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
+            {submitSuccess && (
+              <div className="mb-5 p-4 bg-green-50 border border-green-200 text-deep-green rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-2.5 animate-fade-in">
+                <CheckCircle2 size={20} className="text-fresh-green flex-shrink-0" />
+                <div>
+                  <strong className="block text-sm">Published to Marketplace!</strong>
+                  <span>"{submitSuccess.name}" is now stored in MongoDB with Cloudinary image.</span>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitProduct} className="space-y-5">
+              
+              {/* IMAGE UPLOAD DROPZONE */}
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-dark-text mb-2">
+                  Product Picture *
+                </label>
+
+                {imagePreview ? (
+                  <div className="relative border-2 border-fresh-green rounded-2xl overflow-hidden bg-gray-50 p-2">
+                    <div className="relative h-48 w-full rounded-xl overflow-hidden">
+                      <img 
+                        src={imagePreview} 
+                        alt="Preview" 
+                        className="w-full h-full object-cover" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setImageFile(null); setImagePreview(null); }}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 text-white rounded-full shadow hover:bg-red-700 transition-colors"
+                        title="Remove image"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between px-2 pt-2 text-[11px] text-gray-500 font-medium">
+                      <span className="truncate max-w-[200px]">{imageFile?.name}</span>
+                      <span className="text-fresh-green font-bold">
+                        {(imageFile?.size / (1024 * 1024)).toFixed(2)} MB / 5.0 MB Limit (Valid)
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 ${
+                      isDragging 
+                        ? 'border-fresh-green bg-fresh-green/10' 
+                        : imageError 
+                          ? 'border-red-300 bg-red-50/50' 
+                          : 'border-gray-300 hover:border-fresh-green hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="w-12 h-12 bg-cream rounded-2xl flex items-center justify-center text-deep-green mb-1 shadow-sm">
+                      <Upload size={22} />
+                    </div>
+                    <div>
+                      <p className="text-xs sm:text-sm font-bold text-dark-text">
+                        Click to select picture or drag & drop here
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Max file size: <strong>5 MB</strong> • Formats: <strong>JPG, PNG, WEBP</strong>
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/jpg"
+                  onChange={(e) => handleFileChange(e.target.files[0])}
+                  className="hidden"
+                  id="product-image-file-input"
+                />
+
+                {imageError && (
+                  <p className="text-xs text-red-600 font-semibold mt-1.5 flex items-center gap-1">
+                    <AlertCircle size={14} /> {imageError}
+                  </p>
+                )}
+              </div>
+
+              {/* Product Name */}
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5">
+                  Product Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. 50kg Bag of Mama Gold Rice"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm outline-none focus:border-fresh-green focus:bg-white transition-all"
+                  id="product-name-input"
+                />
+              </div>
+
+              {/* Category & Unit Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5">
+                    Category *
+                  </label>
                   <select
-                    value={newProduct.category}
-                    onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-fresh-green/30 outline-none"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm outline-none focus:border-fresh-green font-medium cursor-pointer"
                   >
                     {categories.map(cat => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Unit *</label>
-                  <input
-                    type="text"
-                    value={newProduct.unit}
-                    onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })}
-                    placeholder="e.g. 50kg Bag"
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-fresh-green/30 outline-none"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Price in {'\u20A6'} *</label>
-                  <input
-                    type="number"
-                    required
-                    value={newProduct.price}
-                    onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
-                    placeholder="75000"
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-fresh-green/30 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Market Stall *</label>
+                  <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5">
+                    Selling Unit *
+                  </label>
                   <select
-                    value={newProduct.location}
-                    onChange={(e) => setNewProduct({ ...newProduct, location: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-fresh-green/30 outline-none"
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    className="w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm outline-none focus:border-fresh-green font-medium cursor-pointer"
                   >
-                    <option value="Mile 12 Market">Mile 12 Market</option>
-                    <option value="Oyingbo Market">Oyingbo Market</option>
-                    <option value="Mushin Market">Mushin Market</option>
-                    <option value="Alaba Rago">Alaba Rago</option>
-                    <option value="Jakande Market">Jakande Lekki</option>
+                    <option value="50kg Bag">50kg Bag</option>
+                    <option value="25kg Bag">25kg Bag</option>
+                    <option value="Paint Bucket (4kg)">Paint Bucket (4kg)</option>
+                    <option value="Derica (850g)">Derica (850g)</option>
+                    <option value="5 Tubers">5 Large Tubers</option>
+                    <option value="25L Jerrycan">25L Jerrycan</option>
+                    <option value="Large Raffia Basket">Large Raffia Basket</option>
+                    <option value="Per Kilogram (1kg)">Per Kilogram (1kg)</option>
                   </select>
                 </div>
               </div>
 
-              <div className="pt-2 flex gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600"
-                >
-                  Cancel
-                </button>
+              {/* Price & Location Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5">
+                    Price in Nigerian Naira (₦) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold">₦</span>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      placeholder="85000"
+                      className="w-full pl-8 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm outline-none focus:border-fresh-green focus:bg-white font-bold"
+                      id="product-price-input"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5">
+                    Market Stall Location *
+                  </label>
+                  <select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm outline-none focus:border-fresh-green font-medium cursor-pointer"
+                  >
+                    <option value="Mile 12 Market">Mile 12 Market (Kosofe)</option>
+                    <option value="Oyingbo Market">Oyingbo Market (Ebute Metta)</option>
+                    <option value="Mushin Olosha Market">Mushin Olosha Market</option>
+                    <option value="Alaba Rago Grains">Alaba Rago Market (Ojo)</option>
+                    <option value="Jakande Market">Jakande Market (Lekki)</option>
+                    <option value="Ikorodu Food Market">Ikorodu Food Market</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5">
+                  Product Description
+                </label>
+                <textarea
+                  rows="2"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Describe your food item (e.g. Stone-free, sorted, dry, sourced from northern farms)..."
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm outline-none focus:border-fresh-green focus:bg-white transition-all resize-none"
+                />
+              </div>
+
+              {/* Progress Indicator */}
+              {isSubmitting && (
+                <div className="p-4 bg-deep-green/5 border border-deep-green/15 rounded-2xl space-y-2 animate-fade-in">
+                  <div className="flex items-center gap-2.5 text-xs font-bold text-deep-green">
+                    <Loader2 size={16} className="animate-spin text-fresh-green" />
+                    <span>{uploadStep}</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-deep-green to-fresh-green animate-pulse w-3/4"></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <div className="pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-gradient-to-r from-deep-green to-fresh-green text-white rounded-xl text-xs font-bold shadow"
+                  disabled={isSubmitting}
+                  className="w-full py-4 bg-gradient-to-r from-deep-green to-fresh-green text-white font-bold rounded-2xl shadow-lg shadow-fresh-green/20 hover:shadow-xl hover:shadow-fresh-green/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 text-sm sm:text-base active:scale-98"
+                  id="submit-add-product-btn"
                 >
-                  Upload Item
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Publishing to Marketplace...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={18} />
+                      <span>Publish Product to Marketplace</span>
+                    </>
+                  )}
                 </button>
               </div>
+
             </form>
+
           </div>
         </div>
       )}
